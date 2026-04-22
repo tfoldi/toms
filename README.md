@@ -1,5 +1,8 @@
 # TOMS – Task-Oriented Manipulation System
 
+[![CI](https://github.com/tfoldi/toms/actions/workflows/ci.yml/badge.svg)](https://github.com/tfoldi/toms/actions/workflows/ci.yml)
+[![Release](https://github.com/tfoldi/toms/actions/workflows/release.yml/badge.svg)](https://github.com/tfoldi/toms/actions/workflows/release.yml)
+
 Behavior-tree-driven tabletop robot manipulation.  Initial task: **pens → pen holder**.
 
 ## Architecture
