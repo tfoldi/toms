@@ -35,8 +35,9 @@ class MarkObjectComplete(BTNode):
                 task.objects_complete.append(object_id)
 
         # Clear selection so next tick of SelectNextObject starts fresh.
-        if hasattr(task, "metadata") and SELECTED_OBJECT_KEY in task.metadata:  # type: ignore[attr-defined]
-            del task.metadata[SELECTED_OBJECT_KEY]  # type: ignore[attr-defined]
+        metadata = getattr(task, "metadata", {})  # type: ignore[attr-defined]
+        if SELECTED_OBJECT_KEY in metadata:
+            del metadata[SELECTED_OBJECT_KEY]
 
         self._status = NodeStatus.SUCCESS
         return NodeStatus.SUCCESS

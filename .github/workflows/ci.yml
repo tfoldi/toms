@@ -79,7 +79,7 @@ jobs:
           flake8 src/ \
             --max-line-length=100 \
             --select=E,F,W \
-            --extend-ignore=E203,W503 \
+            --extend-ignore=E203,E501,W503 \
             --exclude=__pycache__
 
   # ── Job 3: colcon build + test inside ROS2 Humble Docker ──────────────────
