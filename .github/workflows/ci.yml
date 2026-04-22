@@ -1,0 +1,123 @@
+name: CI
+
+on:
+  push:
+    branches: ["main", "dev"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  # ── Job 1: pure-Python tests (no ROS2 needed) ──────────────────────────────
+  unit-tests:
+    name: Unit tests (Python ${{ matrix.python }})
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        python: ["3.10", "3.11"]
+      fail-fast: false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install test dependencies
+        run: pip install pytest pytest-cov
+
+      - name: Run unit tests
+        run: |
+          pytest \
+            src/toms_core/test/ \
+            src/toms_bt/test/ \
+            src/toms_world/test/ \
+            src/toms_validation/test/ \
+            --tb=short \
+            --cov=src \
+            --cov-report=xml:coverage.xml \
+            --cov-report=term-missing \
+            -v
+        env:
+          PYTHONPATH: >-
+            src/toms_core:src/toms_bt:src/toms_world:src/toms_validation:
+            src/toms_perception:src/toms_planning:src/toms_execution:
+            src/toms_robot:src/toms_logging
+
+      - name: Upload coverage report
+        uses: codecov/codecov-action@v4
+        if: matrix.python == '3.10'
+        with:
+          files: coverage.xml
+          fail_ci_if_error: false   # coverage upload is best-effort
+
+  # ── Job 2: lint ────────────────────────────────────────────────────────────
+  lint:
+    name: Lint (flake8 + ruff)
+    runs-on: ubuntu-22.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install linters
+        run: pip install flake8 ruff
+
+      - name: ruff check
+        run: |
+          ruff check src/ \
+            --select E,F,W,I \
+            --ignore E501 \
+            --exclude "**/__pycache__"
+
+      - name: flake8 (max-line-length relaxed for docstrings)
+        run: |
+          flake8 src/ \
+            --max-line-length=100 \
+            --extend-ignore=E203,W503 \
+            --exclude=__pycache__
+
+  # ── Job 3: colcon build + test inside ROS2 Humble Docker ──────────────────
+  ros2-build:
+    name: colcon build + test (ROS2 Humble)
+    runs-on: ubuntu-22.04
+    container:
+      image: ros:humble-ros-base
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: toms_ws/src/toms
+
+      - name: Install Python test tools inside container
+        run: |
+          apt-get update -q
+          apt-get install -y python3-pytest python3-pytest-cov python3-colcon-common-extensions
+        shell: bash
+
+      - name: Build workspace
+        run: |
+          . /opt/ros/humble/setup.sh
+          cd toms_ws
+          colcon build \
+            --packages-select \
+              toms_core toms_bt toms_world \
+              toms_perception toms_planning toms_execution \
+              toms_validation toms_robot toms_logging \
+            --cmake-args -DBUILD_TESTING=ON
+        shell: bash
+
+      - name: Run colcon test
+        run: |
+          . /opt/ros/humble/setup.sh
+          cd toms_ws
+          . install/setup.sh
+          colcon test \
+            --packages-select \
+              toms_core toms_bt toms_world toms_validation
+          colcon test-result --verbose
+        shell: bash

@@ -1,0 +1,51 @@
+# config/planning.yaml
+# Motion planning and grasp generation configuration.
+
+planning:
+  # Grasp generation backend: "heuristic" | "anygrasp" | "contact_graspnet"
+  grasp_backend: "heuristic"   # TODO: upgrade to AnyGrasp
+
+  heuristic_grasp:
+    pre_grasp_offset_z: 0.12      # metres above object top for pre-grasp
+    num_candidates: 4             # number of orientation variants to generate
+
+  # TODO: AnyGrasp config once model is available locally (RTX 4060)
+  anygrasp:
+    model_path: "TODO_path_to_anygrasp_weights"
+    max_grasps: 10
+
+  feasibility:
+    # TODO: IK solver; must match kinematics_plugin in robot.yaml
+    ik_solver: "TODO_e.g._kdl"
+    max_ik_attempts: 5
+
+  moveit2:
+    # TODO: confirm planner name (OMPL, PILZ, CHOMP, …) from MoveIt config
+    planner_id: "TODO_e.g._RRTConnectkConfigDefault"
+    planning_time: 5.0            # seconds
+    max_planning_attempts: 3
+    goal_position_tolerance: 0.005   # metres
+    goal_orientation_tolerance: 0.01  # radians
+
+  cartesian:
+    # Cartesian path for final approach and retreat
+    max_step: 0.005               # metres per waypoint
+    jump_threshold: 0.0           # 0 = disabled
+    approach_velocity_scale: 0.1  # fraction of max velocity
+    retreat_velocity_scale: 0.15
+    approach_distance: 0.05       # metres before grasp point
+    retreat_distance: 0.10        # metres after release
+
+  place:
+    height_above_container: 0.15  # metres above container top for place pose
+
+  validation:
+    grasp:
+      max_empty_gripper_width: 0.07    # metres; wide = empty
+      min_grasp_gripper_width: 0.005   # metres; fully closed = missed
+      # Set to null to disable effort check (requires hardware support)
+      min_grasp_effort: null
+      vision_proximity_threshold: 0.08  # metres
+    placement:
+      min_released_gripper_width: 0.04  # metres; must be open after release
+      max_container_distance_xy: 0.05   # metres; object must be inside holder

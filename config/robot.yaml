@@ -1,0 +1,104 @@
+# config/robot.yaml
+# ─────────────────────────────────────────────────────────────────────────────
+# Base schema and defaults for robot configuration.
+#
+# PURPOSE
+#   This file documents every field the TOMS stack reads from robot config.
+#   Values here are either safe defaults or explicit null sentinels.
+#   Do NOT set robot-specific values here – put those in config/robots/<name>.yaml.
+#
+# LOADING ORDER (launch files)
+#   1. Load this file first  (schema + safe defaults)
+#   2. Load the robot overlay second  (fills in / overrides actual values)
+#   Later entries win, so the overlay silently fills every TODO below.
+#
+# RULE
+#   No Python source file may hardcode any of these field values.
+#   All access must go through the ROS2 parameter system or explicit YAML load.
+# ─────────────────────────────────────────────────────────────────────────────
+
+robot:
+
+  # ── Identity ──────────────────────────────────────────────────────────────
+  model: null           # human-readable arm model name, e.g. "star_arm"
+  variant: null         # optional variant tag, e.g. "cello" or "viola"
+  dof: null             # total revolute/prismatic joints in arm group (int)
+  ros_distro: null      # ROS2 distro string, e.g. "humble"
+
+  # ── MoveIt2 planning ──────────────────────────────────────────────────────
+  # planning_group must exactly match the group name in the SRDF.
+  planning_group: null
+
+  # gripper_group must exactly match the hand/gripper group name in the SRDF.
+  gripper_group: null
+
+  # ── TF frames ─────────────────────────────────────────────────────────────
+  # All frame IDs must match the URDF/TF tree published at runtime.
+  base_frame: null          # root frame of the arm (fixed to world/table)
+  end_effector_link: null   # last arm link (tip of arm, before tool)
+  tool_frame: null          # TCP frame (may equal end_effector_link or be a child)
+
+  # Joint names in URDF order (arm group only, no virtual_joint).
+  # Used for joint-state reading and trajectory construction.
+  joint_names: []           # e.g. [joint1, joint2, joint3, joint4, joint5, joint6]
+
+  # ── ROS2 topics and actions ───────────────────────────────────────────────
+  # Published by the hardware driver / joint_state_broadcaster.
+  joint_state_topic: /joint_states
+
+  # FollowJointTrajectory action server (arm controller).
+  trajectory_action: null   # e.g. /arm_controller/follow_joint_trajectory
+
+  # ── Gripper ───────────────────────────────────────────────────────────────
+  gripper:
+    # Interface type: "gripper_action" | "joint_trajectory" | "custom"
+    # "gripper_action"    → control_msgs/action/GripperCommand
+    # "joint_trajectory"  → same FollowJointTrajectory as arm
+    interface_type: "gripper_action"
+
+    # Action server name (for interface_type == gripper_action)
+    action: null            # e.g. /hand_controller/gripper_cmd
+
+    # Gripper joint name (single actuated joint for GripperActionController)
+    joint_name: null        # e.g. joint7 or finger_joint
+
+    # Physical limits – measure on real hardware, do not guess.
+    open_width: null        # metres, fully open
+    close_width: 0.0        # metres, fully closed (hard stop)
+
+    # Safe maximum gripping force for pens – conservative default.
+    # Override per-object if needed.
+    max_force: 15.0         # Newtons; verify against gripper datasheet
+
+  # ── MoveIt2 package and files ─────────────────────────────────────────────
+  moveit_package: null      # ROS2 package name containing MoveIt config
+  urdf_package: null        # package containing the URDF/xacro
+  urdf_file: null           # relative path within urdf_package
+  srdf_package: null        # package containing the SRDF (often same as moveit_package)
+  srdf_file: null           # relative path within srdf_package
+
+  # ── Kinematics ────────────────────────────────────────────────────────────
+  kinematics:
+    plugin: null            # e.g. kdl_kinematics_plugin/KDLKinematicsPlugin
+    search_resolution: 0.005   # radians
+    timeout: 0.005             # seconds per IK attempt
+
+  # ── Camera / depth sensor ─────────────────────────────────────────────────
+  # Fill in once the sensor is mounted and calibrated.
+  camera:
+    rgb_topic: null
+    depth_topic: null
+    info_topic: null
+    point_cloud_topic: null
+    frame_id: null
+
+  # ── Hand-eye calibration ──────────────────────────────────────────────────
+  calibration:
+    # "eye_in_hand" | "eye_to_hand"
+    method: null
+    # Path to the calibration result YAML (output of easy_handeye or similar)
+    transform_file: null
+
+  # ── Known quirks ──────────────────────────────────────────────────────────
+  # Document any hardware-specific workarounds needed at runtime.
+  quirks: []

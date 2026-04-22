@@ -1,0 +1,59 @@
+# ── ROS2 build artefacts ──────────────────────────────────────────────────────
+build/
+install/
+log/
+*.egg-info/
+*.egg-link
+
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.so
+dist/
+.eggs/
+*.dist-info/
+
+# ── Virtual environments ──────────────────────────────────────────────────────
+.venv/
+venv/
+env/
+.env
+
+# ── Test / coverage output ────────────────────────────────────────────────────
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+junit/
+
+# ── TOMS runtime output ───────────────────────────────────────────────────────
+# Structured logs written by TomsLogger – never commit these
+/tmp/toms_logs/
+
+# Calibration results (contain machine-specific transforms; track separately)
+config/calibration/
+
+# ── Editors / IDEs ────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# ── ROS2 bag files (large binary; use LFS or store separately) ────────────────
+*.db3
+*.mcap
+*.bag
+*.bag.active
+
+# ── Compiled C extensions (not expected in Python-first repo, but safe) ───────
+*.c
+*.cpp.o
+
+# ── Misc ──────────────────────────────────────────────────────────────────────
+*.log
+*.tmp

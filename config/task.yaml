@@ -1,0 +1,29 @@
+# config/task.yaml
+# Task-level parameters for the BT runner.
+
+task:
+  # Unique task identifier; override at launch time for each run
+  task_id: "pen_to_holder_001"
+
+  # Maximum grasp+place retries per object before marking it FAILED
+  retry_budget: 3
+
+  # BT tick rate (Hz)
+  tick_rate_hz: 10.0
+
+  # Object selection policy: "highest_confidence" (v1 only)
+  selection_policy: "highest_confidence"
+
+  # Maximum iterations for the pick-place loop (safety ceiling)
+  max_loop_iterations: 50
+
+  # Container to fill
+  container_label: "pen_holder"
+
+  # Objects to collect
+  object_label: "pen"
+
+  # Logging
+  logging:
+    log_dir: "/tmp/toms_logs"
+    also_print: true
