@@ -12,7 +12,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-from toms_core.models import BoundingBox, FailureType, ObjectStatus, ValidationResult, WorldState
+from toms_core.models import (
+    FailureType,
+    ObjectStatus,
+    ValidationResult,
+    WorldState,
+)
 
 
 @dataclass

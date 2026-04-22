@@ -3,8 +3,9 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from toms_bt.node_base import BTNode, NodeStatus
 from toms_core.models import WorldState
+
+from toms_bt.node_base import BTNode, NodeStatus
 
 
 class PerceptionAdapter(Protocol):

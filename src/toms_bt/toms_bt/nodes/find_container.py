@@ -1,8 +1,9 @@
 """FindContainer – locate the pen holder in the world state."""
 from __future__ import annotations
 
-from toms_bt.node_base import BTNode, NodeStatus
 from toms_core.models import ObjectStatus, WorldState
+
+from toms_bt.node_base import BTNode, NodeStatus
 
 
 class FindContainer(BTNode):

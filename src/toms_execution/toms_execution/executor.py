@@ -8,10 +8,9 @@ come from planning.yaml / robot.yaml.
 """
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
 from typing import List, Optional, Protocol
 
-from toms_core.models import Pose, PlanResult, WorldState
+from toms_core.models import PlanResult, Pose, WorldState
 
 
 class RobotBridgeProtocol(Protocol):

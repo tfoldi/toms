@@ -1,9 +1,7 @@
 """Tests for WorldStateManager state transitions."""
 from __future__ import annotations
 
-import pytest
-
-from toms_core.models import ObjectState, ObjectStatus, TaskStatus, WorldState
+from toms_core.models import ObjectState, ObjectStatus, TaskStatus
 from toms_world.world_state_manager import WorldStateManager
 
 

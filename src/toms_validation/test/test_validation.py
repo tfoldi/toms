@@ -1,22 +1,21 @@
 """Tests for validation state machines and failure classification."""
 from __future__ import annotations
 
-import pytest
-
 from toms_core.models import (
     FailureType,
     ObjectState,
     ObjectStatus,
     Pose,
     Position,
-    Quaternion,
     RobotState,
     TaskState,
     WorldState,
 )
 from toms_validation.grasp_validator import GraspValidationConfig, GraspValidator
-from toms_validation.placement_validator import PlacementValidationConfig, PlacementValidator
-
+from toms_validation.placement_validator import (
+    PlacementValidationConfig,
+    PlacementValidator,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers

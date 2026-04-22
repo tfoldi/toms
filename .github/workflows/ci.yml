@@ -74,10 +74,11 @@ jobs:
             --ignore E501 \
             --exclude "**/__pycache__"
 
-      - name: flake8 (max-line-length relaxed for docstrings)
+      - name: flake8
         run: |
           flake8 src/ \
             --max-line-length=100 \
+            --select=E,F,W \
             --extend-ignore=E203,W503 \
             --exclude=__pycache__
 

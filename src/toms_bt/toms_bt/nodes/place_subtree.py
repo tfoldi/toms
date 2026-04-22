@@ -9,8 +9,6 @@ from __future__ import annotations
 
 from typing import Optional, Protocol
 
-from toms_bt.node_base import BTNode, NodeStatus
-from toms_bt.nodes.select_next_object import SELECTED_OBJECT_KEY
 from toms_core.models import (
     GraspCandidate,
     ObjectStatus,
@@ -19,6 +17,9 @@ from toms_core.models import (
     ValidationResult,
     WorldState,
 )
+
+from toms_bt.node_base import BTNode, NodeStatus
+from toms_bt.nodes.select_next_object import SELECTED_OBJECT_KEY
 
 
 class PlacePoseAdapter(Protocol):

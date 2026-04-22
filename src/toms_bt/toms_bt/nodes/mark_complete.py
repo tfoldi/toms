@@ -1,9 +1,10 @@
 """MarkObjectComplete – bookkeeping after a successful place."""
 from __future__ import annotations
 
+from toms_core.models import WorldState
+
 from toms_bt.node_base import BTNode, NodeStatus
 from toms_bt.nodes.select_next_object import SELECTED_OBJECT_KEY
-from toms_core.models import ObjectStatus, WorldState
 
 
 class MarkObjectComplete(BTNode):

@@ -4,8 +4,9 @@ from __future__ import annotations
 import time
 from typing import Optional, Protocol
 
-from toms_bt.node_base import BTNode, NodeStatus
 from toms_core.models import TaskOutcome, TaskStatus, WorldState
+
+from toms_bt.node_base import BTNode, NodeStatus
 
 
 class LoggerAdapter(Protocol):

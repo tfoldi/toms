@@ -1,8 +1,9 @@
 """SelectNextObject – choose which pen to attempt next."""
 from __future__ import annotations
 
-from toms_bt.node_base import BTNode, NodeStatus
 from toms_core.models import ObjectState, ObjectStatus, TaskState, WorldState
+
+from toms_bt.node_base import BTNode, NodeStatus
 
 # Key used to store the currently selected object in WorldState.task metadata.
 SELECTED_OBJECT_KEY = "selected_object_id"

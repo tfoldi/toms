@@ -9,8 +9,6 @@ from __future__ import annotations
 
 from typing import List, Optional, Protocol
 
-from toms_bt.node_base import BTNode, NodeStatus
-from toms_bt.nodes.select_next_object import SELECTED_OBJECT_KEY
 from toms_core.models import (
     GraspCandidate,
     GraspStatus,
@@ -21,6 +19,8 @@ from toms_core.models import (
     WorldState,
 )
 
+from toms_bt.node_base import BTNode, NodeStatus
+from toms_bt.nodes.select_next_object import SELECTED_OBJECT_KEY
 
 # ---------------------------------------------------------------------------
 # Adapter protocols (implementations live in toms_planning / toms_execution /

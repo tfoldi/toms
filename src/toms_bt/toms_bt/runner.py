@@ -7,15 +7,14 @@ TODO: wire real adapters once hardware details from robot.yaml are filled in.
 """
 from __future__ import annotations
 
-import time
 import uuid
 
 import rclpy
 from rclpy.node import Node
+from toms_core.models import TaskState, TaskStatus, WorldState
 
 from toms_bt.node_base import NodeStatus
 from toms_bt.templates.pen_to_holder import PenToHolderConfig, build_pen_to_holder_tree
-from toms_core.models import TaskState, TaskStatus, WorldState
 
 
 class BtRunnerNode(Node):

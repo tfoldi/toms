@@ -27,6 +27,8 @@ from toms_bt.nodes.find_container import FindContainer
 from toms_bt.nodes.mark_complete import MarkObjectComplete
 from toms_bt.nodes.pick_subtree import (
     ExecutionAdapter as PickExecutionAdapter,
+)
+from toms_bt.nodes.pick_subtree import (
     FeasibilityAdapter,
     GraspGeneratorAdapter,
     GraspValidatorAdapter,
@@ -35,9 +37,11 @@ from toms_bt.nodes.pick_subtree import (
 )
 from toms_bt.nodes.place_subtree import (
     ExecutionAdapter as PlaceExecutionAdapter,
+)
+from toms_bt.nodes.place_subtree import (
     PlacementValidatorAdapter,
-    PlacePoseAdapter,
     PlaceObjectInContainer,
+    PlacePoseAdapter,
 )
 from toms_bt.nodes.report_outcome import LoggerAdapter, ReportOutcome
 from toms_bt.nodes.select_next_object import SelectNextObject
