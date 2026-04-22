@@ -7,7 +7,7 @@ Config loading order (later files override earlier ones):
   4. config/perception.yaml
   5. config/task.yaml
 
-IMPORTANT: Do NOT run until the following are resolved in cello_star.yaml:
+IMPORTANT: Do NOT run until the following are resolved in cello_follower.yaml:
   [ ] gripper.open_width measured on physical robot
   [ ] gripper.tool_frame TCP offset defined and measured
   [ ] camera.* topics confirmed (sensor mounted and driver running)
@@ -17,7 +17,7 @@ IMPORTANT: Do NOT run until the following are resolved in cello_star.yaml:
 
 Usage:
     ros2 launch toms_bt toms_hardware.launch.py
-    ros2 launch toms_bt toms_hardware.launch.py robot:=cello_star task_id:=run_001
+    ros2 launch toms_bt toms_hardware.launch.py robot:=cello_follower task_id:=run_001
 """
 from __future__ import annotations
 
@@ -40,7 +40,7 @@ def _config(relative: str) -> str:
 
 def generate_launch_description() -> LaunchDescription:
     robot_arg = DeclareLaunchArgument(
-        "robot", default_value="cello_star",
+        "robot", default_value="cello_follower",
         description="Robot overlay name (file: config/robots/<robot>.yaml)",
     )
     task_id_arg = DeclareLaunchArgument(
@@ -55,9 +55,9 @@ def generate_launch_description() -> LaunchDescription:
     # Config files loaded in override order.
     # LaunchConfiguration cannot be used directly in os.path.join; the robot
     # overlay path is resolved at launch time via a helper below.
-    # For now, default to cello_star. To support dynamic selection, use
+    # For now, default to cello_follower. To support dynamic selection, use
     # launch.substitutions.PathJoinSubstitution when ament paths are available.
-    robot_name = "cello_star"   # TODO: read from LaunchConfiguration("robot")
+    robot_name = "cello_follower"   # TODO: read from LaunchConfiguration("robot")
                                 # once PathJoinSubstitution supports config/ dir
 
     bt_runner_node = Node(

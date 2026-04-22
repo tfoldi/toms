@@ -26,10 +26,10 @@ def _config(relative: str) -> str:
 
 
 def generate_launch_description() -> LaunchDescription:
-    # Simulation loads the robot schema + cello_star overlay so the same
+    # Simulation loads the robot schema + cello_follower overlay so the same
     # topic/frame names are used, but sim_mode=True substitutes mock adapters.
     robot_arg = DeclareLaunchArgument(
-        "robot", default_value="cello_star",
+        "robot", default_value="cello_follower",
         description="Robot overlay name (file: config/robots/<robot>.yaml)",
     )
     task_id_arg = DeclareLaunchArgument(
@@ -42,7 +42,7 @@ def generate_launch_description() -> LaunchDescription:
         "tick_rate_hz", default_value="10.0", description="BT tick rate"
     )
 
-    robot_name = "cello_star"   # TODO: read from LaunchConfiguration("robot")
+    robot_name = "cello_follower"   # TODO: read from LaunchConfiguration("robot")
 
     bt_runner_node = Node(
         package="toms_bt",
