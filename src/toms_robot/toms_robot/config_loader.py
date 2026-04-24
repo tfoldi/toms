@@ -19,11 +19,24 @@ Usage (from a ROS2 node):
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 
 class ConfigurationError(ValueError):
     """Raised when a required config field is null or missing."""
+
+
+@dataclass
+class PoseConfig:
+    """Static pose from YAML: frame_id + (x,y,z) + quaternion (x,y,z,w).
+
+    Kept here (not in toms_core.models.Pose) so config_loader stays dependency-free.
+    Use .to_core_pose() when handing off to planners.
+    """
+
+    frame_id: str
+    position: Tuple[float, float, float]          # (x, y, z) metres
+    orientation: Tuple[float, float, float, float]  # (qx, qy, qz, qw)
 
 
 # ---------------------------------------------------------------------------
@@ -85,6 +98,10 @@ class RobotConfig:
     srdf_file: str
     home_joints: Optional[List[float]] = None   # smoke_test.home_joints; null = skip move-to-home
     test_lift_offset_z: Optional[float] = None  # fixed_pick_test.test_lift_offset_z; metres
+    object_pose: Optional[PoseConfig] = None    # fixed_pick_test.object_pose (EE pose at grasp)
+    place_pose: Optional[PoseConfig] = None     # fixed_pick_test.place_pose  (EE pose at release)
+    pre_grasp_offset_z: Optional[float] = None  # fixed_pick_test.pre_grasp_offset_z; metres
+    retreat_offset_z: Optional[float] = None    # fixed_pick_test.retreat_offset_z; metres
 
     @property
     def effective_tool_frame(self) -> str:
@@ -154,6 +171,10 @@ class RobotConfig:
             srdf_file=require("robot.srdf_file"),
             home_joints=get("smoke_test.home_joints"),
             test_lift_offset_z=get("fixed_pick_test.test_lift_offset_z"),
+            object_pose=_read_pose(p, "fixed_pick_test.object_pose"),
+            place_pose=_read_pose(p, "fixed_pick_test.place_pose"),
+            pre_grasp_offset_z=get("fixed_pick_test.pre_grasp_offset_z"),
+            retreat_offset_z=get("fixed_pick_test.retreat_offset_z"),
         )
 
     @classmethod
@@ -175,6 +196,40 @@ class RobotConfig:
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+
+def _read_pose(p: dict, prefix: str) -> Optional[PoseConfig]:
+    """Pull a PoseConfig from flat-dotted keys under *prefix*.
+
+    Example prefix='fixed_pick_test.object_pose' reads keys:
+      fixed_pick_test.object_pose.frame_id
+      fixed_pick_test.object_pose.position.{x,y,z}
+      fixed_pick_test.object_pose.orientation.{x,y,z,w}
+
+    Returns None if any of the seven position/orientation fields is missing
+    or None – poses are optional.
+    """
+    required = (
+        f"{prefix}.position.x", f"{prefix}.position.y", f"{prefix}.position.z",
+        f"{prefix}.orientation.x", f"{prefix}.orientation.y",
+        f"{prefix}.orientation.z", f"{prefix}.orientation.w",
+    )
+    if any(p.get(k) is None for k in required):
+        return None
+    return PoseConfig(
+        frame_id=p.get(f"{prefix}.frame_id", "base_link"),
+        position=(
+            float(p[f"{prefix}.position.x"]),
+            float(p[f"{prefix}.position.y"]),
+            float(p[f"{prefix}.position.z"]),
+        ),
+        orientation=(
+            float(p[f"{prefix}.orientation.x"]),
+            float(p[f"{prefix}.orientation.y"]),
+            float(p[f"{prefix}.orientation.z"]),
+            float(p[f"{prefix}.orientation.w"]),
+        ),
+    )
 
 
 def _deep_merge(base: dict, override: dict) -> dict:

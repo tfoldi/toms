@@ -51,10 +51,15 @@ class CelloRobotBridge(RobotBridgeBase):
         self._config = config
         self._node = node
 
-        # ROS2 client handles – created in _connect()
+        # ROS2 client handles – created in _connect() / lazily in service callers
         self._joint_state_sub = None
         self._trajectory_client = None
         self._gripper_client = None
+        self._cartesian_client = None   # lazy: created on first execute_cartesian_move()
+
+        # Diagnostic state from the last execute_cartesian_move() call
+        self._last_cartesian_status: Optional[str] = None
+        self._last_cartesian_fraction: float = 0.0
 
         # Cached hardware state
         self._joint_positions: List[float] = [0.0] * config.dof
@@ -244,31 +249,189 @@ class CelloRobotBridge(RobotBridgeBase):
             return False
         return self._send_joint_trajectory(trajectory)
 
-    def execute_cartesian_move(
-        self, poses: List["Pose"], velocity_scale: float = 0.1
-    ) -> bool:
-        """Execute Cartesian waypoints via MoveIt2 ComputeCartesianPath.
+    def cartesian_move_params(
+        self,
+        poses: List["Pose"],
+        velocity_scale: float = 0.1,
+        max_step: float = 0.005,
+        jump_threshold: float = 0.0,
+        avoid_collisions: bool = True,
+    ) -> dict:
+        """Return the non-message parameters for a /compute_cartesian_path call.
 
-        frame_id = effective_tool_frame (falls back to end_effector_link if
-        robot.tool_frame is null in config).
-        Returns False in dry-run mode.
-
-        TODO: implement ComputeCartesianPath service call once confirmed
-              that /compute_cartesian_path service is available on hardware.
+        Pure Python – no ROS2 types – so tests can verify the wiring without
+        needing MoveIt installed.  Actual message construction happens inside
+        execute_cartesian_move(), which relies on this method for the
+        configuration-derived fields.
         """
-        _LOG.debug(
-            "execute_cartesian_move  %d waypoints  vel=%.2f  frame=%s",
-            len(poses),
-            velocity_scale,
-            self._config.effective_tool_frame,
+        return {
+            "group_name": self._config.planning_group,
+            "link_name": self._config.end_effector_link,
+            "frame_id": self._config.base_frame,
+            "num_waypoints": len(poses),
+            "max_step": max_step,
+            "jump_threshold": jump_threshold,
+            "avoid_collisions": avoid_collisions,
+            "velocity_scale": velocity_scale,
+        }
+
+    def execute_cartesian_move(
+        self,
+        poses: List["Pose"],
+        velocity_scale: float = 0.1,
+        max_step: float = 0.005,
+        jump_threshold: float = 0.0,
+        avoid_collisions: bool = True,
+        min_fraction: float = 0.9,
+        service_timeout: float = 10.0,
+    ) -> bool:
+        """Plan + execute a Cartesian waypoint path via MoveIt2.
+
+        Uses moveit_msgs/GetCartesianPath service at /compute_cartesian_path
+        to turn the waypoint list (in self._config.base_frame) into a joint
+        trajectory, then dispatches the trajectory to the arm's
+        FollowJointTrajectory action server.
+
+        poses: list of toms_core.models.Pose in base_frame (at least one).
+               Treated as the sequence of EE poses to traverse.
+        velocity_scale: scales resulting trajectory point time_from_start
+                        post-hoc (MoveIt emits a time-parameterised path at
+                        max speed).
+        max_step: maximum EE step between interpolated waypoints (metres).
+        min_fraction: minimum accepted path coverage.  The service can
+                      partially solve the path and report fraction < 1.0;
+                      we refuse to execute anything under this threshold.
+
+        Returns False in dry-run, on service unavailable, on fraction below
+        min_fraction, or on trajectory execution failure.
+        """
+        params = self.cartesian_move_params(
+            poses, velocity_scale=velocity_scale, max_step=max_step,
+            jump_threshold=jump_threshold, avoid_collisions=avoid_collisions,
+        )
+        _LOG.info(
+            "execute_cartesian_move: %d waypoints  vel=%.2f  max_step=%.3f m  "
+            "group=%s  link=%s  frame=%s",
+            params["num_waypoints"], velocity_scale, max_step,
+            params["group_name"], params["link_name"], params["frame_id"],
         )
         if self._node is None:
             _LOG.warning("execute_cartesian_move: dry-run mode, no node connected")
             return False
-        raise NotImplementedError(
-            "execute_cartesian_move: ComputeCartesianPath service call not yet"
-            " implemented. See toms_robot/cello_bridge.py TODO."
+        if not poses:
+            _LOG.error("execute_cartesian_move: empty poses list")
+            return False
+
+        trajectory, fraction = self._call_compute_cartesian_path(
+            poses, params, service_timeout=service_timeout,
         )
+        if trajectory is None:
+            self._last_cartesian_status = "service_failed"
+            return False
+        self._last_cartesian_fraction = fraction
+        if fraction < min_fraction:
+            _LOG.warning(
+                "execute_cartesian_move: fraction %.2f below min %.2f – refusing "
+                "to execute partial path",
+                fraction, min_fraction,
+            )
+            self._last_cartesian_status = f"low_fraction_{fraction:.2f}"
+            return False
+        if velocity_scale < 1.0:
+            self._scale_trajectory_time(trajectory, velocity_scale)
+        ok = self._send_joint_trajectory(trajectory.joint_trajectory)
+        self._last_cartesian_status = "executed_ok" if ok else "execute_rejected"
+        return ok
+
+    # ------------------------------------------------------------------
+    # Internal – cartesian path service call
+    # ------------------------------------------------------------------
+
+    def _call_compute_cartesian_path(
+        self, poses: List["Pose"], params: dict, service_timeout: float,
+    ):
+        """Call /compute_cartesian_path and return (RobotTrajectory, fraction).
+
+        Returns (None, 0.0) on any failure (service unavailable, timeout,
+        non-success error code).
+        """
+        try:
+            import rclpy  # type: ignore[import]  # noqa: PLC0415
+            from geometry_msgs.msg import Pose as RosPose  # type: ignore[import]  # noqa: PLC0415
+            from moveit_msgs.msg import (  # type: ignore[import]  # noqa: PLC0415
+                MoveItErrorCodes,
+                RobotState,
+            )
+            from moveit_msgs.srv import (  # type: ignore[import]  # noqa: PLC0415
+                GetCartesianPath,
+            )
+        except ImportError as exc:
+            _LOG.error("moveit_msgs / geometry_msgs not available: %s", exc)
+            return None, 0.0
+
+        if self._cartesian_client is None:
+            self._cartesian_client = self._node.create_client(
+                GetCartesianPath, "/compute_cartesian_path",
+            )
+        if not self._cartesian_client.wait_for_service(timeout_sec=service_timeout):
+            _LOG.error("/compute_cartesian_path service not available")
+            return None, 0.0
+
+        req = GetCartesianPath.Request()
+        req.header.frame_id = params["frame_id"]
+        req.header.stamp = self._node.get_clock().now().to_msg()
+        req.group_name = params["group_name"]
+        req.link_name = params["link_name"]
+        req.max_step = params["max_step"]
+        req.jump_threshold = params["jump_threshold"]
+        req.avoid_collisions = params["avoid_collisions"]
+        req.start_state = RobotState()   # empty = current state
+
+        waypoints = []
+        for p in poses:
+            rp = RosPose()
+            rp.position.x = p.position.x
+            rp.position.y = p.position.y
+            rp.position.z = p.position.z
+            rp.orientation.x = p.orientation.x
+            rp.orientation.y = p.orientation.y
+            rp.orientation.z = p.orientation.z
+            rp.orientation.w = p.orientation.w
+            waypoints.append(rp)
+        req.waypoints = waypoints
+
+        future = self._cartesian_client.call_async(req)
+        rclpy.spin_until_future_complete(
+            self._node, future, timeout_sec=service_timeout,
+        )
+        response = future.result()
+        if response is None:
+            _LOG.error("/compute_cartesian_path service call timed out")
+            return None, 0.0
+        if response.error_code.val != MoveItErrorCodes.SUCCESS:
+            _LOG.warning(
+                "/compute_cartesian_path returned error_code=%d",
+                response.error_code.val,
+            )
+            return None, 0.0
+        return response.solution, response.fraction
+
+    @staticmethod
+    def _scale_trajectory_time(trajectory: object, velocity_scale: float) -> None:
+        """Rescale each point's time_from_start by 1/velocity_scale in-place."""
+        try:
+            from builtin_interfaces.msg import Duration  # type: ignore[import]  # noqa: PLC0415
+        except ImportError:
+            return
+        if velocity_scale <= 0.0:
+            return
+        factor = 1.0 / velocity_scale
+        for pt in trajectory.joint_trajectory.points:
+            total_sec = pt.time_from_start.sec + pt.time_from_start.nanosec * 1e-9
+            scaled = total_sec * factor
+            sec = int(scaled)
+            nsec = int((scaled - sec) * 1e9)
+            pt.time_from_start = Duration(sec=sec, nanosec=nsec)
 
     # ------------------------------------------------------------------
     # Internal – ROS2 connection

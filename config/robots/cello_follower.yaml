@@ -132,15 +132,20 @@ fixed_pick_test:
   # loop with real IK + collision checking, no perception, no object.
   test_lift_offset_z: 0.05   # metres – straight-up lift from current pose
 
-  # TODO once place_pose is captured: full pick-and-place via
-  #   object_pose → pre_grasp → grasp → retreat → place_pose → release → home.
-  # object_pose:
-  #   frame_id: base_link
-  #   position:    {x: -0.289, y: 0.021, z: -0.005}
-  #   orientation: {x: 0.998, y: 0.000, z: -0.061, w: 0.000}
-  # place_pose:
-  #   frame_id: base_link
-  #   position:    {x: null, y: null, z: null}
-  #   orientation: {x: null, y: null, z: null, w: null}
-  # pre_grasp_offset_z: 0.10
-  # retreat_offset_z:   0.10
+  # EE pose captured via `tf2_echo base_link link6` with the gripper at the
+  # pen's physical position. Top-down orientation (EE Z axis ≈ base -Z).
+  object_pose:
+    frame_id: base_link
+    position:    {x: -0.289, y: 0.021, z: -0.005}
+    orientation: {x:  0.998, y: 0.000, z: -0.061, w: 0.000}
+
+  # EE pose captured over the pen holder. Top-down orientation.
+  place_pose:
+    frame_id: base_link
+    position:    {x:  0.354, y: 0.180, z:  0.051}
+    orientation: {x: -0.707, y: 0.707, z: -0.025, w: 0.025}
+
+  # Cartesian approach / retreat distances (metres, along EE -Z = straight up).
+  # Used for pre-grasp hover, lift-off after grasp, and descent before release.
+  pre_grasp_offset_z: 0.10   # hover 10 cm above object_pose before descending
+  retreat_offset_z:   0.10   # lift 10 cm after grasp before moving to place

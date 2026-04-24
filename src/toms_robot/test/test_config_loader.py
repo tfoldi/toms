@@ -12,9 +12,11 @@ from toms_robot.config_loader import (
     ConfigurationError,
     GripperConfig,
     KinematicsConfig,
+    PoseConfig,
     RobotConfig,
     _deep_merge,
     _flatten,
+    _read_pose,
 )
 
 # ---------------------------------------------------------------------------
@@ -191,6 +193,76 @@ def test_missing_kinematics_plugin_raises():
 # ---------------------------------------------------------------------------
 
 
+def test_read_pose_all_fields_present():
+    p = {
+        "fixed_pick_test.object_pose.frame_id": "base_link",
+        "fixed_pick_test.object_pose.position.x": 1.0,
+        "fixed_pick_test.object_pose.position.y": 2.0,
+        "fixed_pick_test.object_pose.position.z": 3.0,
+        "fixed_pick_test.object_pose.orientation.x": 0.0,
+        "fixed_pick_test.object_pose.orientation.y": 0.0,
+        "fixed_pick_test.object_pose.orientation.z": 0.0,
+        "fixed_pick_test.object_pose.orientation.w": 1.0,
+    }
+    pose = _read_pose(p, "fixed_pick_test.object_pose")
+    assert isinstance(pose, PoseConfig)
+    assert pose.frame_id == "base_link"
+    assert pose.position == (1.0, 2.0, 3.0)
+    assert pose.orientation == (0.0, 0.0, 0.0, 1.0)
+
+
+def test_read_pose_defaults_frame_id_to_base_link():
+    p = {
+        "fixed_pick_test.object_pose.position.x": 0.1,
+        "fixed_pick_test.object_pose.position.y": 0.2,
+        "fixed_pick_test.object_pose.position.z": 0.3,
+        "fixed_pick_test.object_pose.orientation.x": 0.0,
+        "fixed_pick_test.object_pose.orientation.y": 0.0,
+        "fixed_pick_test.object_pose.orientation.z": 0.0,
+        "fixed_pick_test.object_pose.orientation.w": 1.0,
+    }
+    pose = _read_pose(p, "fixed_pick_test.object_pose")
+    assert pose is not None
+    assert pose.frame_id == "base_link"
+
+
+def test_read_pose_returns_none_when_any_field_missing():
+    # missing position.z
+    p = {
+        "fixed_pick_test.object_pose.position.x": 0.1,
+        "fixed_pick_test.object_pose.position.y": 0.2,
+        "fixed_pick_test.object_pose.orientation.x": 0.0,
+        "fixed_pick_test.object_pose.orientation.y": 0.0,
+        "fixed_pick_test.object_pose.orientation.z": 0.0,
+        "fixed_pick_test.object_pose.orientation.w": 1.0,
+    }
+    assert _read_pose(p, "fixed_pick_test.object_pose") is None
+
+
+def test_read_pose_returns_none_when_field_is_null():
+    # all keys present but one is None (YAML null) – should treat as absent
+    p = {
+        "fixed_pick_test.place_pose.position.x": 0.1,
+        "fixed_pick_test.place_pose.position.y": 0.2,
+        "fixed_pick_test.place_pose.position.z": None,
+        "fixed_pick_test.place_pose.orientation.x": 0.0,
+        "fixed_pick_test.place_pose.orientation.y": 0.0,
+        "fixed_pick_test.place_pose.orientation.z": 0.0,
+        "fixed_pick_test.place_pose.orientation.w": 1.0,
+    }
+    assert _read_pose(p, "fixed_pick_test.place_pose") is None
+
+
+def test_robot_config_fixed_pick_fields_default_to_none():
+    """RobotConfig without any fixed_pick_test keys leaves the 4 fields None."""
+    cfg = RobotConfig.from_dict(CELLO_PARAMS)
+    assert cfg.object_pose is None
+    assert cfg.place_pose is None
+    assert cfg.test_lift_offset_z is None
+    assert cfg.pre_grasp_offset_z is None
+    assert cfg.retreat_offset_z is None
+
+
 def _repo_root() -> str:
     """Return absolute path to the repository root (3 dirs up from this file)."""
     # This file: src/toms_robot/test/test_config_loader.py
@@ -219,6 +291,16 @@ def test_from_yaml_files_cello():
     assert cfg.gripper.close_position == pytest.approx(-0.025)
     assert cfg.home_joints is not None
     assert len(cfg.home_joints) == cfg.dof
+    # fixed_pick_test plumbing
+    assert cfg.test_lift_offset_z == pytest.approx(0.05)
+    assert cfg.pre_grasp_offset_z == pytest.approx(0.10)
+    assert cfg.retreat_offset_z == pytest.approx(0.10)
+    assert cfg.object_pose is not None
+    assert cfg.object_pose.frame_id == "base_link"
+    assert cfg.object_pose.position == pytest.approx((-0.289, 0.021, -0.005))
+    assert cfg.object_pose.orientation[3] == pytest.approx(0.0)   # qw
+    assert cfg.place_pose is not None
+    assert cfg.place_pose.position == pytest.approx((0.354, 0.180, 0.051))
 
 
 def test_from_yaml_files_overlay_wins():
@@ -346,3 +428,124 @@ def test_cello_bridge_force_capped_at_max():
     # No real call, just verify the config value the bridge would cap at
     bridge = CelloRobotBridge(cfg, node=None)
     assert bridge._config.gripper.max_force == pytest.approx(15.0)
+
+
+# ---------------------------------------------------------------------------
+# execute_cartesian_move – tested without moving any arm
+# ---------------------------------------------------------------------------
+
+
+def _dummy_pose(x=0.0, y=0.0, z=0.0, qw=1.0):
+    from toms_core.models import Pose
+    p = Pose()
+    p.position.x = x
+    p.position.y = y
+    p.position.z = z
+    p.orientation.w = qw
+    return p
+
+
+def test_cartesian_move_params_wires_config():
+    """cartesian_move_params forwards config values – no ROS2, no service call."""
+    cfg = cello_config()
+    bridge = CelloRobotBridge(cfg, node=None)
+    params = bridge.cartesian_move_params(
+        [_dummy_pose(), _dummy_pose(z=0.1)],
+        velocity_scale=0.25,
+        max_step=0.01,
+    )
+    assert params["group_name"] == "arm"
+    assert params["link_name"] == "link6"
+    assert params["frame_id"] == "base_link"
+    assert params["num_waypoints"] == 2
+    assert params["max_step"] == pytest.approx(0.01)
+    assert params["velocity_scale"] == pytest.approx(0.25)
+    assert params["avoid_collisions"] is True
+    assert params["jump_threshold"] == pytest.approx(0.0)
+
+
+def test_cartesian_move_params_defaults():
+    cfg = cello_config()
+    bridge = CelloRobotBridge(cfg, node=None)
+    params = bridge.cartesian_move_params([_dummy_pose()])
+    # Defaults from signature – these are the knobs downstream code depends on
+    assert params["max_step"] == pytest.approx(0.005)
+    assert params["velocity_scale"] == pytest.approx(0.1)
+    assert params["jump_threshold"] == pytest.approx(0.0)
+    assert params["avoid_collisions"] is True
+
+
+def test_execute_cartesian_move_dry_run_returns_false():
+    """node=None → dry run; must not touch any service client."""
+    cfg = cello_config()
+    bridge = CelloRobotBridge(cfg, node=None)
+    assert bridge.execute_cartesian_move([_dummy_pose(), _dummy_pose(z=0.1)]) is False
+
+
+def test_execute_cartesian_move_empty_poses_returns_false():
+    """Empty poses list is an input error – fail fast, do not call the service."""
+    cfg = cello_config()
+
+    class _FakeNode:
+        def get_clock(self):
+            raise AssertionError("should not be called – empty-poses guard")
+
+    bridge = CelloRobotBridge(cfg, node=None)
+    bridge._node = _FakeNode()  # simulate connected state without real ROS2
+    assert bridge.execute_cartesian_move([]) is False
+
+
+def test_execute_cartesian_move_refuses_partial_fraction():
+    """When the service returns fraction < min_fraction, we must not execute."""
+    cfg = cello_config()
+    bridge = CelloRobotBridge(cfg, node=None)
+    bridge._node = object()   # truthy so dry-run check is bypassed
+
+    # Stub the service-call layer: return a fake trajectory + fraction = 0.5
+    sent_trajectories = []
+
+    def fake_call(_poses, _params, service_timeout):
+        return object(), 0.5  # trajectory exists but only 50% path coverage
+
+    def fake_send(traj):
+        sent_trajectories.append(traj)
+        return True
+
+    bridge._call_compute_cartesian_path = fake_call          # type: ignore[method-assign]
+    bridge._send_joint_trajectory = fake_send                # type: ignore[method-assign]
+    ok = bridge.execute_cartesian_move([_dummy_pose(), _dummy_pose(z=0.1)],
+                                       min_fraction=0.9)
+    assert ok is False
+    assert sent_trajectories == []   # nothing sent to the arm
+
+
+def test_execute_cartesian_move_dispatches_full_path():
+    """fraction >= min_fraction and send succeeds → returns True and dispatches."""
+    cfg = cello_config()
+    bridge = CelloRobotBridge(cfg, node=None)
+    bridge._node = object()
+
+    class _FakeJointTraj:
+        points = []   # empty list – velocity scaling is a no-op
+
+    class _FakeTraj:
+        joint_trajectory = _FakeJointTraj()
+
+    sent = []
+
+    def fake_call(_poses, _params, service_timeout):
+        return _FakeTraj(), 1.0
+
+    def fake_send(traj):
+        sent.append(traj)
+        return True
+
+    bridge._call_compute_cartesian_path = fake_call          # type: ignore[method-assign]
+    bridge._send_joint_trajectory = fake_send                # type: ignore[method-assign]
+    # velocity_scale=1.0 bypasses the time-scaling branch entirely
+    ok = bridge.execute_cartesian_move(
+        [_dummy_pose(), _dummy_pose(z=0.1)], velocity_scale=1.0,
+    )
+    assert ok is True
+    assert len(sent) == 1
+    assert sent[0] is _FakeTraj.joint_trajectory

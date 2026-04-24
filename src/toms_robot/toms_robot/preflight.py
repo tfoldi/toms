@@ -584,10 +584,24 @@ class SmokeTestRunner:
         self._node = node   # needed for TF lookup in lift test
 
     def run_all(self, planner: object = None) -> List[CheckResult]:
-        """Run the full smoke-test sequence. Returns one result per step."""
+        """Run the full smoke-test sequence. Returns one result per step.
+
+        When execute_motion=True the order is:
+            1. joint_state read         (no motion)
+            2. gripper cycle            (no arm motion)
+            3. move_to_home (start)     (drive arm to known-good config)
+            4. plan_and_execute_lift    (joint-space plan to current+Z)
+            5. cartesian_lift           (cartesian path to current+Z)
+            6. move_to_home (end)       (return arm to home)
+
+        Step 3 ensures the lift tests start from a config where MoveIt's
+        KDL/OMPL stack is happy.  Without it, planning fails when the user
+        has nudged the arm into a near-singular pose between runs.
+        """
         results: List[CheckResult] = []
         results.append(self._check_joint_state())
         results += self._check_gripper_cycle()
+
         if planner is None:
             results.append(CheckResult(
                 name="smoke:moveit_plan_service",
@@ -597,11 +611,17 @@ class SmokeTestRunner:
                 message="MoveIt2 plan check skipped: no planner provided",
             ))
         elif self._execute_motion:
+            # Drive to a known-good starting config before exercising the planner
+            results.append(self._check_move_to_home(name="smoke:move_to_home_pre"))
             # Real lift test – exercises plan+execute end-to-end
             results += self._check_plan_and_execute_lift(planner)
+            # Same lift via /compute_cartesian_path – exercises bridge.execute_cartesian_move
+            results.append(self._check_cartesian_lift())
         else:
             # Cheap service-health probe (unreachable pose; expected to warn)
             results.append(self._check_plan(planner))
+
+        # Always end at home (whether or not lifts ran)
         results.append(self._check_move_to_home())
         return results
 
@@ -772,16 +792,123 @@ class SmokeTestRunner:
         ))
         return results
 
-    def _check_move_to_home(self) -> CheckResult:
+    def _check_cartesian_lift(self) -> CheckResult:
+        """Plan + execute the same Z lift via /compute_cartesian_path.
+
+        Exercises bridge.execute_cartesian_move() end-to-end on hardware,
+        independently of /plan_kinematic_path.  Reads the current EE pose
+        via TF, builds [current, current+Z] waypoints, and dispatches.
+        """
+        offset = getattr(self._config, "test_lift_offset_z", None)
+        if offset is None:
+            return CheckResult(
+                name="smoke:cartesian_lift",
+                category=CATEGORY_MOVEIT,
+                passed=True,
+                warning=True,
+                message=(
+                    "cartesian_lift skipped: "
+                    "fixed_pick_test.test_lift_offset_z is null in config"
+                ),
+            )
+        if self._node is None:
+            return CheckResult(
+                name="smoke:cartesian_lift",
+                category=CATEGORY_MOVEIT,
+                passed=False,
+                message="cartesian_lift: no node passed to SmokeTestRunner",
+            )
+
+        try:
+            import rclpy  # type: ignore[import]  # noqa: PLC0415
+            from tf2_ros import (  # type: ignore[import]  # noqa: PLC0415
+                Buffer,
+                TransformListener,
+            )
+        except ImportError as exc:
+            return CheckResult(
+                name="smoke:cartesian_lift",
+                category=CATEGORY_MOVEIT,
+                passed=False,
+                message=f"tf2_ros not available: {exc}",
+            )
+
+        buf = Buffer()
+        _listener = TransformListener(buf, self._node)  # noqa: F841  # keep alive
+        deadline = time.monotonic() + 3.0
+        base = self._config.base_frame
+        ee = self._config.end_effector_link
+        while time.monotonic() < deadline:
+            rclpy.spin_once(self._node, timeout_sec=0.1)
+            if buf.can_transform(base, ee, rclpy.time.Time()):
+                break
+        try:
+            tf = buf.lookup_transform(base, ee, rclpy.time.Time())
+        except Exception as exc:
+            return CheckResult(
+                name="smoke:cartesian_lift",
+                category=CATEGORY_MOVEIT,
+                passed=False,
+                message=f"TF lookup {base!r}→{ee!r} failed: {exc}",
+            )
+
+        from toms_core.models import Pose  # noqa: PLC0415
+        t = tf.transform.translation
+        r = tf.transform.rotation
+        start = Pose()
+        start.position.x = t.x; start.position.y = t.y; start.position.z = t.z
+        start.orientation.x = r.x; start.orientation.y = r.y
+        start.orientation.z = r.z; start.orientation.w = r.w
+        end = Pose()
+        end.position.x = t.x; end.position.y = t.y; end.position.z = t.z + offset
+        end.orientation.x = r.x; end.orientation.y = r.y
+        end.orientation.z = r.z; end.orientation.w = r.w
+
+        try:
+            ok = self._bridge.execute_cartesian_move(  # type: ignore[attr-defined]
+                [start, end],
+                velocity_scale=0.3,
+                max_step=0.005,
+            )
+        except Exception as exc:
+            return CheckResult(
+                name="smoke:cartesian_lift",
+                category=CATEGORY_EXECUTION,
+                passed=False,
+                message=f"execute_cartesian_move raised: {exc}",
+            )
+
+        status = getattr(self._bridge, "_last_cartesian_status", None) or "unknown"
+        fraction = getattr(self._bridge, "_last_cartesian_fraction", 0.0)
+        return CheckResult(
+            name="smoke:cartesian_lift",
+            category=CATEGORY_EXECUTION,
+            passed=ok,
+            message=(
+                f"Cartesian +{offset*100:.1f}cm lift via /compute_cartesian_path "
+                f"from EE ({t.x:.3f},{t.y:.3f},{t.z:.3f}) (fraction={fraction:.2f})"
+                if ok
+                else (
+                    f"Cartesian lift FAILED ({status}, fraction={fraction:.2f}) – "
+                    f"start EE ({t.x:.3f},{t.y:.3f},{t.z:.3f}), target +{offset:.3f}m Z"
+                )
+            ),
+            details={"status": status, "fraction": fraction},
+        )
+
+    def _check_move_to_home(self, name: str = "smoke:move_to_home") -> CheckResult:
         """Send a single-point trajectory to home_joints via the arm controller.
 
         Only runs when execute_motion=True AND config.home_joints is set.
         Otherwise returns a skip (PASS, warning) result.
+
+        ``name`` lets callers distinguish a pre-test home (e.g. before the
+        lift tests) from the post-test home in the report.
         """
         home = getattr(self._config, "home_joints", None)
         if home is None:
             return CheckResult(
-                name="smoke:move_to_home",
+                name=name,
                 category=CATEGORY_EXECUTION,
                 passed=True,
                 warning=True,
@@ -789,7 +916,7 @@ class SmokeTestRunner:
             )
         if not self._execute_motion:
             return CheckResult(
-                name="smoke:move_to_home",
+                name=name,
                 category=CATEGORY_EXECUTION,
                 passed=True,
                 warning=True,
@@ -802,13 +929,13 @@ class SmokeTestRunner:
             ok = self._bridge.move_to_joint_positions(home, duration_sec=3.0)  # type: ignore[attr-defined]
         except Exception as exc:
             return CheckResult(
-                name="smoke:move_to_home",
+                name=name,
                 category=CATEGORY_EXECUTION,
                 passed=False,
                 message=f"move_to_home exception: {exc}",
             )
         return CheckResult(
-            name="smoke:move_to_home",
+            name=name,
             category=CATEGORY_EXECUTION,
             passed=ok,
             message=(
