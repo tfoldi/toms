@@ -146,6 +146,56 @@ class CelloRobotBridge(RobotBridgeBase):
             return False
         return self._send_gripper_command(position=position, max_effort=max_effort)
 
+    def move_to_joint_positions(
+        self,
+        positions: List[float],
+        duration_sec: float = 3.0,
+    ) -> bool:
+        """Build a single-point JointTrajectory and send to the arm controller.
+
+        positions: one float per joint in self._config.joint_names order.
+        duration_sec: time allowed for the controller to reach the goal
+        (controller interpolates from current state).
+
+        No collision checking – the caller is responsible for clear path.
+        Returns False in dry-run mode (no node).
+        """
+        if self._node is None:
+            _LOG.warning("move_to_joint_positions: dry-run mode, no node connected")
+            return False
+        if len(positions) != len(self._config.joint_names):
+            _LOG.error(
+                "move_to_joint_positions: %d positions but %d joint names",
+                len(positions),
+                len(self._config.joint_names),
+            )
+            return False
+        try:
+            from builtin_interfaces.msg import Duration  # type: ignore[import]  # noqa: PLC0415
+            from trajectory_msgs.msg import (  # type: ignore[import]  # noqa: PLC0415
+                JointTrajectory,
+                JointTrajectoryPoint,
+            )
+        except ImportError as exc:
+            _LOG.error("trajectory_msgs not available: %s", exc)
+            return False
+
+        traj = JointTrajectory()
+        traj.header.stamp = self._node.get_clock().now().to_msg()
+        traj.joint_names = list(self._config.joint_names)
+        point = JointTrajectoryPoint()
+        point.positions = list(positions)
+        sec = int(duration_sec)
+        nsec = int((duration_sec - sec) * 1e9)
+        point.time_from_start = Duration(sec=sec, nanosec=nsec)
+        traj.points = [point]
+        _LOG.info(
+            "move_to_joint_positions: sending 1-point trajectory (duration=%.1fs) to %s",
+            duration_sec,
+            self._config.trajectory_action,
+        )
+        return self._send_joint_trajectory(traj)
+
     def execute_trajectory(self, trajectory: object) -> bool:
         """Send trajectory to the FollowJointTrajectory action server.
 

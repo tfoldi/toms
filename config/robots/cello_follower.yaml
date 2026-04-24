@@ -119,8 +119,8 @@ robot:
 
 # ── Smoke test ──────────────────────────────────────────────────────────────
 smoke_test:
-  # TODO: set to a known-safe home position once bring-up is complete.
+  # Captured from real hardware via `ros2 topic echo --once /joint_states`
+  # and reordered to joint1 … joint6. Arm stretched forward, wrist slightly
+  # down – a safe stow that also happens to reach the pen workspace.
   # Radians, one per joint in joint_names order (joint1 … joint6).
-  # CAUTION: all-zeros may NOT be safe for the cello arm – verify against
-  # the URDF joint limits and workspace before setting this value.
-  home_joints: null
+  home_joints: [-0.0003, -1.5668, 1.5295, 0.0008, 0.3780, -0.0010]

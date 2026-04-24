@@ -596,7 +596,58 @@ class SmokeTestRunner:
                 warning=True,
                 message="MoveIt2 plan check skipped: no planner provided",
             ))
+        results.append(self._check_move_to_home())
         return results
+
+    def _check_move_to_home(self) -> CheckResult:
+        """Send a single-point trajectory to home_joints via the arm controller.
+
+        Only runs when execute_motion=True AND config.home_joints is set.
+        Otherwise returns a skip (PASS, warning) result.
+        """
+        home = getattr(self._config, "home_joints", None)
+        if home is None:
+            return CheckResult(
+                name="smoke:move_to_home",
+                category=CATEGORY_EXECUTION,
+                passed=True,
+                warning=True,
+                message="move_to_home skipped: smoke_test.home_joints is null in config",
+            )
+        if not self._execute_motion:
+            return CheckResult(
+                name="smoke:move_to_home",
+                category=CATEGORY_EXECUTION,
+                passed=True,
+                warning=True,
+                message=(
+                    f"move_to_home skipped: execute_motion=False. "
+                    f"Target home_joints={[round(v, 4) for v in home]}."
+                ),
+            )
+        try:
+            ok = self._bridge.move_to_joint_positions(home, duration_sec=3.0)  # type: ignore[attr-defined]
+        except Exception as exc:
+            return CheckResult(
+                name="smoke:move_to_home",
+                category=CATEGORY_EXECUTION,
+                passed=False,
+                message=f"move_to_home exception: {exc}",
+            )
+        return CheckResult(
+            name="smoke:move_to_home",
+            category=CATEGORY_EXECUTION,
+            passed=ok,
+            message=(
+                f"Arm reached home_joints={[round(v, 4) for v in home]}"
+                if ok
+                else (
+                    f"move_to_home FAILED – trajectory action rejected/aborted. "
+                    f"Target: {[round(v, 4) for v in home]}"
+                )
+            ),
+            details={"home_joints": list(home)},
+        )
 
     # ------------------------------------------------------------------
 

@@ -215,7 +215,10 @@ def test_from_yaml_files_cello():
     assert cfg.end_effector_link == "link6"
     assert cfg.trajectory_action == "/arm_controller/follow_joint_trajectory"
     assert cfg.gripper.action == "/hand_controller/gripper_cmd"
-    assert cfg.gripper.open_position == pytest.approx(-0.025)
+    assert cfg.gripper.open_position == pytest.approx(0.0)
+    assert cfg.gripper.close_position == pytest.approx(-0.025)
+    assert cfg.home_joints is not None
+    assert len(cfg.home_joints) == cfg.dof
 
 
 def test_from_yaml_files_overlay_wins():

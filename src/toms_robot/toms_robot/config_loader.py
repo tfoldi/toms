@@ -83,6 +83,7 @@ class RobotConfig:
     urdf_file: str
     srdf_package: str
     srdf_file: str
+    home_joints: Optional[List[float]] = None   # smoke_test.home_joints; null = skip move-to-home
 
     @property
     def effective_tool_frame(self) -> str:
@@ -150,6 +151,7 @@ class RobotConfig:
             urdf_file=require("robot.urdf_file"),
             srdf_package=require("robot.srdf_package"),
             srdf_file=require("robot.srdf_file"),
+            home_joints=get("smoke_test.home_joints"),
         )
 
     @classmethod
