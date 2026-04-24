@@ -576,19 +576,19 @@ class SmokeTestRunner:
         bridge: object,   # CelloRobotBridge with live node attached
         *,
         execute_motion: bool = False,
+        node: Optional["rclpy.node.Node"] = None,
     ) -> None:
         self._config = config
         self._bridge = bridge
         self._execute_motion = execute_motion
+        self._node = node   # needed for TF lookup in lift test
 
     def run_all(self, planner: object = None) -> List[CheckResult]:
         """Run the full smoke-test sequence. Returns one result per step."""
         results: List[CheckResult] = []
         results.append(self._check_joint_state())
         results += self._check_gripper_cycle()
-        if planner is not None:
-            results.append(self._check_plan(planner))
-        else:
+        if planner is None:
             results.append(CheckResult(
                 name="smoke:moveit_plan_service",
                 category=CATEGORY_MOVEIT,
@@ -596,7 +596,180 @@ class SmokeTestRunner:
                 warning=True,
                 message="MoveIt2 plan check skipped: no planner provided",
             ))
+        elif self._execute_motion:
+            # Real lift test – exercises plan+execute end-to-end
+            results += self._check_plan_and_execute_lift(planner)
+        else:
+            # Cheap service-health probe (unreachable pose; expected to warn)
+            results.append(self._check_plan(planner))
         results.append(self._check_move_to_home())
+        return results
+
+    def _check_plan_and_execute_lift(self, planner: object) -> List[CheckResult]:
+        """Plan + execute a small straight-up lift from the current EE pose.
+
+        Reads current base_frame→end_effector_link TF, builds a goal pose with
+        +test_lift_offset_z in Z (same orientation), calls the planner, then
+        executes the resulting trajectory via the bridge.
+
+        Returns two CheckResults: one for planning, one for execution.
+        """
+        offset = getattr(self._config, "test_lift_offset_z", None)
+        if offset is None:
+            return [CheckResult(
+                name="smoke:plan_and_execute_lift",
+                category=CATEGORY_MOVEIT,
+                passed=True,
+                warning=True,
+                message=(
+                    "plan_and_execute_lift skipped: "
+                    "fixed_pick_test.test_lift_offset_z is null in config"
+                ),
+            )]
+        if self._node is None:
+            return [CheckResult(
+                name="smoke:plan_and_execute_lift",
+                category=CATEGORY_MOVEIT,
+                passed=False,
+                message="plan_and_execute_lift: no node passed to SmokeTestRunner",
+            )]
+
+        # ---- Read current EE pose via TF ----
+        try:
+            import rclpy  # type: ignore[import]  # noqa: PLC0415
+            from tf2_ros import (  # type: ignore[import]  # noqa: PLC0415
+                Buffer,
+                TransformListener,
+            )
+        except ImportError as exc:
+            return [CheckResult(
+                name="smoke:plan_and_execute_lift",
+                category=CATEGORY_MOVEIT,
+                passed=False,
+                message=f"tf2_ros not available: {exc}",
+            )]
+
+        buf = Buffer()
+        _listener = TransformListener(buf, self._node)  # noqa: F841  # keep alive
+        deadline = time.monotonic() + 3.0
+        base = self._config.base_frame
+        ee = self._config.end_effector_link
+        while time.monotonic() < deadline:
+            rclpy.spin_once(self._node, timeout_sec=0.1)
+            if buf.can_transform(base, ee, rclpy.time.Time()):
+                break
+        try:
+            tf = buf.lookup_transform(base, ee, rclpy.time.Time())
+        except Exception as exc:
+            return [CheckResult(
+                name="smoke:plan_and_execute_lift",
+                category=CATEGORY_MOVEIT,
+                passed=False,
+                message=f"TF lookup {base!r}→{ee!r} failed: {exc}",
+            )]
+
+        # ---- Build goal = current pose + Z offset ----
+        from toms_core.models import (  # noqa: PLC0415
+            GraspCandidate,
+            GraspStatus,
+            PlanRequest,
+            Pose,
+        )
+        t = tf.transform.translation
+        r = tf.transform.rotation
+        goal = Pose()
+        goal.position.x = t.x
+        goal.position.y = t.y
+        goal.position.z = t.z + offset
+        goal.orientation.x = r.x
+        goal.orientation.y = r.y
+        goal.orientation.z = r.z
+        goal.orientation.w = r.w
+
+        candidate = GraspCandidate(
+            candidate_id="lift_test",
+            object_id="lift_test",
+            pose=goal,
+            score=1.0,
+            status=GraspStatus.CANDIDATE,
+        )
+        request = PlanRequest(
+            object_id="lift_test",
+            grasp_candidate=candidate,
+            planning_group=self._config.planning_group,
+            end_effector_link=self._config.end_effector_link,
+            base_frame=self._config.base_frame,
+        )
+
+        # ---- Plan ----
+        results: List[CheckResult] = []
+        try:
+            plan_result = planner.plan(request)  # type: ignore[attr-defined]
+        except Exception as exc:
+            return [CheckResult(
+                name="smoke:plan_lift",
+                category=CATEGORY_MOVEIT,
+                passed=False,
+                message=f"Planner raised exception: {exc}",
+            )]
+
+        plan_ok = getattr(plan_result, "success", False)
+        results.append(CheckResult(
+            name="smoke:plan_lift",
+            category=CATEGORY_MOVEIT,
+            passed=plan_ok,
+            message=(
+                f"Planned +{offset*100:.1f}cm lift from EE ({t.x:.3f},{t.y:.3f},{t.z:.3f}) "
+                f"in {getattr(plan_result, 'planning_time', 0):.3f}s"
+                if plan_ok
+                else (
+                    f"Plan FAILED (error_code={getattr(plan_result, 'error_code', '?')}) "
+                    f"from EE ({t.x:.3f},{t.y:.3f},{t.z:.3f}) to z+{offset:.3f}m"
+                )
+            ),
+        ))
+        if not plan_ok:
+            results.append(CheckResult(
+                name="smoke:execute_lift",
+                category=CATEGORY_EXECUTION,
+                passed=True,
+                warning=True,
+                message="execute_lift skipped: planning failed",
+            ))
+            return results
+
+        # ---- Execute via bridge ----
+        joint_traj = getattr(plan_result.trajectory, "joint_trajectory", None)
+        if joint_traj is None:
+            results.append(CheckResult(
+                name="smoke:execute_lift",
+                category=CATEGORY_EXECUTION,
+                passed=False,
+                message="Planned trajectory has no joint_trajectory field",
+            ))
+            return results
+
+        try:
+            exec_ok = self._bridge.execute_trajectory(joint_traj)  # type: ignore[attr-defined]
+        except Exception as exc:
+            results.append(CheckResult(
+                name="smoke:execute_lift",
+                category=CATEGORY_EXECUTION,
+                passed=False,
+                message=f"execute_trajectory raised: {exc}",
+            ))
+            return results
+
+        results.append(CheckResult(
+            name="smoke:execute_lift",
+            category=CATEGORY_EXECUTION,
+            passed=exec_ok,
+            message=(
+                f"Executed +{offset*100:.1f}cm lift successfully"
+                if exec_ok
+                else "Trajectory execution returned False (controller rejected/aborted)"
+            ),
+        ))
         return results
 
     def _check_move_to_home(self) -> CheckResult:
@@ -675,52 +848,98 @@ class SmokeTestRunner:
     def _check_gripper_cycle(self) -> List[CheckResult]:
         results = []
 
+        def _read_pos() -> Optional[float]:
+            """Read the cached gripper joint position after a short spin window.
+
+            Short spin is just to let a fresh /joint_states message arrive –
+            the upstream cello_controller now waits for the servo to settle
+            before returning from the action, so we don't need to sleep here.
+            """
+            if self._node is None:
+                return getattr(self._bridge, "_gripper_position", None)
+            try:
+                import rclpy  # type: ignore[import]  # noqa: PLC0415
+            except ImportError:
+                return getattr(self._bridge, "_gripper_position", None)
+            deadline = time.monotonic() + 0.2
+            while time.monotonic() < deadline:
+                rclpy.spin_once(self._node, timeout_sec=0.05)
+            return getattr(self._bridge, "_gripper_position", None)
+
+        def _fmt(p: Optional[float]) -> str:
+            return "n/a" if p is None else f"{p:.4f} m"
+
+        def _moved(pre: Optional[float], post: Optional[float]) -> bool:
+            return (pre is not None and post is not None
+                    and abs(post - pre) >= 0.002)  # ≥ 2 mm delta
+
+        # ---- open ----
+        pre = _read_pos()
         ok_open = self._bridge.open_gripper()  # type: ignore[attr-defined]
+        post = _read_pos()
         results.append(CheckResult(
             name="smoke:gripper_open",
             category=CATEGORY_EXECUTION,
             passed=ok_open,
+            warning=ok_open and not _moved(pre, post)
+                and pre is not None and abs(pre - self._config.gripper.open_position) > 0.002,
             message=(
-                "Gripper opened successfully"
+                f"Gripper opened: joint7_left {_fmt(pre)} → {_fmt(post)} "
+                f"(target {self._config.gripper.open_position:.4f} m)"
                 if ok_open
                 else (
                     "open_gripper() returned False – check gripper action server "
                     f"({self._config.gripper.action}) and hardware"
                 )
             ),
+            details={"pre": pre, "post": post, "target": self._config.gripper.open_position},
         ))
 
+        # ---- close ----
+        pre = _read_pos()
         ok_close = self._bridge.close_gripper(  # type: ignore[attr-defined]
             target_width=0.0,
             force=self._config.gripper.max_force * 0.3,  # 30 % – safe for unloaded
         )
+        post = _read_pos()
         results.append(CheckResult(
             name="smoke:gripper_close",
             category=CATEGORY_EXECUTION,
             passed=ok_close,
+            warning=ok_close and not _moved(pre, post)
+                and pre is not None and abs(pre - self._config.gripper.close_position) > 0.002,
             message=(
-                "Gripper closed successfully"
+                f"Gripper closed: joint7_left {_fmt(pre)} → {_fmt(post)} "
+                f"(target {self._config.gripper.close_position:.4f} m)"
                 if ok_close
                 else (
                     "close_gripper() returned False – check gripper action server "
                     f"({self._config.gripper.action}) and hardware"
                 )
             ),
+            details={"pre": pre, "post": post, "target": self._config.gripper.close_position},
         ))
 
+        # ---- reopen ----
+        pre = _read_pos()
         ok_reopen = self._bridge.open_gripper()  # type: ignore[attr-defined]
+        post = _read_pos()
         results.append(CheckResult(
             name="smoke:gripper_reopen",
             category=CATEGORY_EXECUTION,
             passed=ok_reopen,
+            warning=ok_reopen and not _moved(pre, post)
+                and pre is not None and abs(pre - self._config.gripper.open_position) > 0.002,
             message=(
-                "Gripper re-opened to safe state"
+                f"Gripper re-opened: joint7_left {_fmt(pre)} → {_fmt(post)} "
+                f"(target {self._config.gripper.open_position:.4f} m)"
                 if ok_reopen
                 else (
                     "Re-open gripper FAILED – gripper may be stuck. "
                     "Inspect manually before continuing."
                 )
             ),
+            details={"pre": pre, "post": post, "target": self._config.gripper.open_position},
         ))
         return results
 

@@ -212,7 +212,7 @@ class PreflightNode(rclpy.node.Node):
             pass   # planner unavailable; smoke test will skip plan check
 
         runner = SmokeTestRunner(
-            self._config, bridge, execute_motion=execute_motion
+            self._config, bridge, execute_motion=execute_motion, node=self,
         )
         smoke_results = runner.run_all(planner=planner)
         self._results.extend(smoke_results)

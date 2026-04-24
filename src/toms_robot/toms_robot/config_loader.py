@@ -84,6 +84,7 @@ class RobotConfig:
     srdf_package: str
     srdf_file: str
     home_joints: Optional[List[float]] = None   # smoke_test.home_joints; null = skip move-to-home
+    test_lift_offset_z: Optional[float] = None  # fixed_pick_test.test_lift_offset_z; metres
 
     @property
     def effective_tool_frame(self) -> str:
@@ -152,6 +153,7 @@ class RobotConfig:
             srdf_package=require("robot.srdf_package"),
             srdf_file=require("robot.srdf_file"),
             home_joints=get("smoke_test.home_joints"),
+            test_lift_offset_z=get("fixed_pick_test.test_lift_offset_z"),
         )
 
     @classmethod

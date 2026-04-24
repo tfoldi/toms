@@ -124,3 +124,23 @@ smoke_test:
   # down – a safe stow that also happens to reach the pen workspace.
   # Radians, one per joint in joint_names order (joint1 … joint6).
   home_joints: [-0.0003, -1.5668, 1.5295, 0.0008, 0.3780, -0.0010]
+
+# ── Fixed-pose pick test (pre-perception bring-up) ─────────────────────────
+fixed_pick_test:
+  # Simple lift test: reads current EE pose via TF, plans to same pose +Z,
+  # executes the MoveIt2-planned trajectory. Validates the full plan+execute
+  # loop with real IK + collision checking, no perception, no object.
+  test_lift_offset_z: 0.05   # metres – straight-up lift from current pose
+
+  # TODO once place_pose is captured: full pick-and-place via
+  #   object_pose → pre_grasp → grasp → retreat → place_pose → release → home.
+  # object_pose:
+  #   frame_id: base_link
+  #   position:    {x: -0.289, y: 0.021, z: -0.005}
+  #   orientation: {x: 0.998, y: 0.000, z: -0.061, w: 0.000}
+  # place_pose:
+  #   frame_id: base_link
+  #   position:    {x: null, y: null, z: null}
+  #   orientation: {x: null, y: null, z: null, w: null}
+  # pre_grasp_offset_z: 0.10
+  # retreat_offset_z:   0.10

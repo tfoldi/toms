@@ -59,6 +59,7 @@ class CelloRobotBridge(RobotBridgeBase):
         # Cached hardware state
         self._joint_positions: List[float] = [0.0] * config.dof
         self._gripper_width: float = abs(config.gripper.open_position)
+        self._gripper_position: float = 0.0   # joint7_left position (m), updated from /joint_states
 
         _LOG.info(
             "CelloRobotBridge binding:\n"
@@ -150,14 +151,25 @@ class CelloRobotBridge(RobotBridgeBase):
         self,
         positions: List[float],
         duration_sec: float = 3.0,
+        num_waypoints: int = 25,
     ) -> bool:
-        """Build a single-point JointTrajectory and send to the arm controller.
+        """Build an interpolated multi-point JointTrajectory to positions.
 
         positions: one float per joint in self._config.joint_names order.
-        duration_sec: time allowed for the controller to reach the goal
-        (controller interpolates from current state).
+        duration_sec: total time for the motion (end-to-end).
+        num_waypoints: how many intermediate steps to interpolate.
 
-        No collision checking – the caller is responsible for clear path.
+        A single-waypoint trajectory causes the servo driver to command the
+        goal position immediately with max speed, resulting in abrupt
+        "jump-scare" motion even for large deltas.  Splitting the motion
+        into many small waypoints (each spaced duration_sec/num_waypoints
+        apart) forces the controller to step gradually.
+
+        Linear interpolation from the latest cached joint state. Falls back
+        to a single-waypoint command if the cache is empty (first run,
+        before /joint_states arrived).
+
+        No collision checking – the caller is responsible for a clear path.
         Returns False in dry-run mode (no node).
         """
         if self._node is None:
@@ -180,18 +192,41 @@ class CelloRobotBridge(RobotBridgeBase):
             _LOG.error("trajectory_msgs not available: %s", exc)
             return False
 
+        start = list(self._joint_positions)
+        if len(start) != len(positions) or all(abs(v) < 1e-9 for v in start):
+            # Joint state not yet populated – fall back to single waypoint
+            _LOG.warning(
+                "move_to_joint_positions: _joint_positions unavailable, "
+                "using single waypoint (motion may be abrupt)"
+            )
+            num_waypoints = 1
+            start = list(positions)   # unused, just a safe placeholder
+
         traj = JointTrajectory()
         traj.header.stamp = self._node.get_clock().now().to_msg()
         traj.joint_names = list(self._config.joint_names)
-        point = JointTrajectoryPoint()
-        point.positions = list(positions)
-        sec = int(duration_sec)
-        nsec = int((duration_sec - sec) * 1e9)
-        point.time_from_start = Duration(sec=sec, nanosec=nsec)
-        traj.points = [point]
+
+        points = []
+        for i in range(1, num_waypoints + 1):
+            frac = i / num_waypoints
+            t = duration_sec * frac
+            if num_waypoints == 1:
+                interp = list(positions)
+            else:
+                interp = [s + (p - s) * frac for s, p in zip(start, positions)]
+            pt = JointTrajectoryPoint()
+            pt.positions = interp
+            sec = int(t)
+            nsec = int((t - sec) * 1e9)
+            pt.time_from_start = Duration(sec=sec, nanosec=nsec)
+            points.append(pt)
+        traj.points = points
+
         _LOG.info(
-            "move_to_joint_positions: sending 1-point trajectory (duration=%.1fs) to %s",
+            "move_to_joint_positions: %d waypoints over %.1fs (%.0f ms/step) → %s",
+            num_waypoints,
             duration_sec,
+            (duration_sec / num_waypoints) * 1000.0,
             self._config.trajectory_action,
         )
         return self._send_joint_trajectory(traj)
@@ -287,6 +322,9 @@ class CelloRobotBridge(RobotBridgeBase):
             self._joint_positions = [
                 name_to_pos.get(n, 0.0) for n in self._config.joint_names
             ]
+            self._gripper_position = name_to_pos.get(
+                self._config.gripper.joint_name, self._gripper_position
+            )
         except Exception as exc:
             _LOG.warning("_on_joint_state error: %s", exc)
 
@@ -323,7 +361,14 @@ class CelloRobotBridge(RobotBridgeBase):
         if result is None:
             _LOG.error("Gripper action timed out waiting for result")
             return False
-        return not result.result.stalled
+        r = result.result
+        self._node.get_logger().info(
+            f"Gripper result: position={r.position:.4f} effort={r.effort:.2f} "
+            f"reached_goal={r.reached_goal} stalled={r.stalled}"
+        )
+        # Success = action completed without an abnormal stall.
+        # (Some controllers leave reached_goal=False on no-op goals – tolerate it.)
+        return not r.stalled
 
     def _send_joint_trajectory(self, trajectory: object) -> bool:
         """Send a FollowJointTrajectory goal and block until result."""
