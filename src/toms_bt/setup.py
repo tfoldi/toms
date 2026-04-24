@@ -1,3 +1,5 @@
+from glob import glob
+
 from setuptools import find_packages, setup
 
 package_name = "toms_bt"
@@ -9,6 +11,7 @@ setup(
     data_files=[
         ("share/ament_index/resource_index/packages", [f"resource/{package_name}"]),
         (f"share/{package_name}", ["package.xml"]),
+        (f"share/{package_name}/launch", glob("launch/*.py")),
     ],
     install_requires=["setuptools"],
     zip_safe=True,
@@ -20,6 +23,8 @@ setup(
     entry_points={
         "console_scripts": [
             "run_task = toms_bt.runner:main",
+            "run_task_instrumented = toms_bt.instrumented_runner:main",
+            "run_preflight = toms_bt.preflight_node:main",
         ],
     },
 )

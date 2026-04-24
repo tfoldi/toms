@@ -69,12 +69,14 @@ robot:
     # Actuated finger joint (prismatic, metres from link6 origin)
     joint_name: joint7_left
 
-    # Finger positions from SRDF group states:
-    #   "open"  → joint7_left = -0.025 m  (finger out from centre)
-    #   "close" → joint7_left =  0.000 m  (hard stop)
+    # URDF joint7_left limits: lower=-0.025, upper=0.0
+    # Physical behaviour (confirmed on hardware):
+    #   0.0    → fingers fully OPEN  (URDF upper limit)
+    #  -0.025  → fingers CLOSED      (URDF lower limit; mechanical stop ~-0.032)
+    # Note: SRDF group states have open/close labels swapped vs. physical behaviour.
     # GripperActionController sends these as the `position` field.
-    open_position: -0.025    # metres (prismatic)
-    close_position: 0.0      # metres (prismatic)
+    open_position: 0.0       # metres (prismatic) – URDF upper limit
+    close_position: -0.025   # metres (prismatic) – URDF lower limit (safe)
 
     # Physical gap at full open (2 × |open_position| × geometry factor).
     # TODO: measure actual fingertip separation on the physical robot.
@@ -114,3 +116,11 @@ robot:
   # ── Known quirks ──────────────────────────────────────────────────────────
   # TODO: document anything found during bring-up
   quirks: []
+
+# ── Smoke test ──────────────────────────────────────────────────────────────
+smoke_test:
+  # TODO: set to a known-safe home position once bring-up is complete.
+  # Radians, one per joint in joint_names order (joint1 … joint6).
+  # CAUTION: all-zeros may NOT be safe for the cello arm – verify against
+  # the URDF joint limits and workspace before setting this value.
+  home_joints: null

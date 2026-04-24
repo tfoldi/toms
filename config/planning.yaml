@@ -20,8 +20,10 @@ planning:
     max_ik_attempts: 5
 
   moveit2:
-    # TODO: confirm planner name (OMPL, PILZ, CHOMP, …) from MoveIt config
-    planner_id: "TODO_e.g._RRTConnectkConfigDefault"
+    # Empty string → MoveIt2 uses the default OMPL planner configured in
+    # ompl_planning.yaml (RRTConnect by default in cello_moveit_config).
+    # Set to a specific ID (e.g. "RRTConnectkConfigDefault") only if needed.
+    planner_id: ""
     planning_time: 5.0            # seconds
     max_planning_attempts: 3
     goal_position_tolerance: 0.005   # metres

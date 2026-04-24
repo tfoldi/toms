@@ -62,8 +62,13 @@ robot:
     # Gripper joint name (single actuated joint for GripperActionController)
     joint_name: null        # e.g. joint7 or finger_joint
 
-    # Physical limits – measure on real hardware, do not guess.
-    open_width: null        # metres, fully open
+    # Actuated joint positions (metres for prismatic, radians for revolute).
+    # For GripperActionController these are sent as the `position` field.
+    open_position: null     # joint position at fully open
+    close_position: null    # joint position at fully closed (hard stop)
+
+    # Physical fingertip gap – measure on real hardware, do not guess.
+    open_width: null        # metres, fingertip-to-fingertip at open_position
     close_width: 0.0        # metres, fully closed (hard stop)
 
     # Safe maximum gripping force for pens – conservative default.
@@ -102,3 +107,15 @@ robot:
   # ── Known quirks ──────────────────────────────────────────────────────────
   # Document any hardware-specific workarounds needed at runtime.
   quirks: []
+
+# ── Smoke test ──────────────────────────────────────────────────────────────
+# Parameters used by the preflight smoke test (scripts/preflight_offline.py
+# and toms_preflight.launch.py).  These are NOT read by the task runner.
+smoke_test:
+
+  # Safe joint angles (radians) to use as the planning goal in the MoveIt2
+  # smoke-test probe.  One value per joint in robot.joint_names order.
+  # Leave null to skip the motion plan smoke test (service availability is
+  # still checked via the ROS binding check).
+  # CAUTION: verify this pose against the URDF before setting it on hardware.
+  home_joints: null   # e.g. [0.0, -0.5, 0.5, 0.0, 0.5, 0.0]

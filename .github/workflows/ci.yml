@@ -25,7 +25,7 @@ jobs:
           python-version: ${{ matrix.python }}
 
       - name: Install test dependencies
-        run: pip install pytest pytest-cov
+        run: pip install pytest pytest-cov pyyaml
 
       - name: Run unit tests
         run: |
@@ -34,6 +34,9 @@ jobs:
             src/toms_bt/test/ \
             src/toms_world/test/ \
             src/toms_validation/test/ \
+            src/toms_robot/test/ \
+            src/toms_planning/test/ \
+            src/toms_logging/test/ \
             --tb=short \
             --cov=src \
             --cov-report=xml:coverage.xml \

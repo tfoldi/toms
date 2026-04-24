@@ -17,5 +17,9 @@ setup(
     description="TOMS toms_logging package",
     license="Apache-2.0",
     tests_require=["pytest"],
-    entry_points={},
+    entry_points={
+        "console_scripts": [
+            "toms-run-summary = toms_logging.run_summary:main",
+        ],
+    },
 )

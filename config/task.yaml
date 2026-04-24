@@ -25,5 +25,13 @@ task:
 
   # Logging
   logging:
-    log_dir: "/tmp/toms_logs"
+    log_dir: "/tmp/toms_logs"   # legacy flat-file log (kept for compatibility)
     also_print: true
+
+  # Run artifact directory.
+  # Each run creates runs/<task_id>_<YYYYMMDD_HHMMSS>/ containing:
+  #   events.jsonl        – all structured events (BT, planner, validation, …)
+  #   config_snapshot.yaml – merged config at time of run
+  #   rosout.txt          – captured Python-level console output
+  #   run_metadata.json   – run ID, start time, outcome
+  runs_base_dir: "runs"  # relative to cwd at launch time; set to absolute path if needed

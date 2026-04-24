@@ -48,18 +48,12 @@ def generate_launch_description() -> LaunchDescription:
         package="toms_bt",
         executable="run_task",
         name="toms_bt_runner",
-        parameters=[
-            _config("robot.yaml"),                # 1. base schema
-            _config(f"robots/{robot_name}.yaml"), # 2. robot overlay
-            _config("planning.yaml"),             # 3. planning
-            _config("task.yaml"),                 # 4. task (perception stays mock)
-            {
-                "task_id": LaunchConfiguration("task_id"),
-                "retry_budget": LaunchConfiguration("retry_budget"),
-                "tick_rate_hz": LaunchConfiguration("tick_rate_hz"),
-                "sim_mode": True,
-            },
-        ],
+        parameters=[{
+            "task_id": LaunchConfiguration("task_id"),
+            "retry_budget": LaunchConfiguration("retry_budget"),
+            "tick_rate_hz": LaunchConfiguration("tick_rate_hz"),
+            "sim_mode": True,
+        }],
         output="screen",
     )
 
