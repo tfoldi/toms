@@ -147,5 +147,10 @@ fixed_pick_test:
 
   # Cartesian approach / retreat distances (metres, along EE -Z = straight up).
   # Used for pre-grasp hover, lift-off after grasp, and descent before release.
-  pre_grasp_offset_z: 0.10   # hover 10 cm above object_pose before descending
-  retreat_offset_z:   0.10   # lift 10 cm after grasp before moving to place
+  # NOTE: capped at 5 cm because lifting 10 cm from home_joints exceeds the
+  # cello's reachable workspace (the arm at home is folded back over the base
+  # near a wrist limit).  Both joint-space and cartesian planners refuse at
+  # 10 cm (smoke test confirms 5 cm works).  Increase only with a different
+  # home pose that has more headroom.
+  pre_grasp_offset_z: 0.05   # hover 5 cm above object_pose before descending
+  retreat_offset_z:   0.05   # lift 5 cm after grasp before moving to place

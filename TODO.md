@@ -41,6 +41,39 @@ note the why and the blocker if any.
   `calibration.method` and `calibration.transform_file` are both null.
   Not needed for fixed-pose picking. Required before perception.
 
+- **Revisit `pre_grasp_offset_z`** (currently 5 cm)
+  Capped at 5 cm because lifting 10 cm from the current `home_joints`
+  exceeds the cello's reachable workspace from that config (both
+  joint-space and cartesian planners refuse). When we have a different
+  home pose with more headroom (e.g. arm pointing forward instead of
+  folded back), increase to 8–10 cm for a safer pre-grasp hover.
+
+## fixed_pick.py – debugging step 2
+
+`scripts/fixed_pick.py` step 2 still fails with `error_code=99999`
+(generic FAILURE) even at 5 cm offset, while the smoke test's
+`plan_lift` succeeds at the same offset.  Hypothesis (untested):
+
+The smoke test uses `current TF EE position + Z offset` as the goal.
+Fixed_pick uses `config'd object_pose.position + Z offset`.  After
+`move_to_home`, the actual EE position drifts from the captured
+`object_pose` by a few mm (cello_controller is open-loop, no
+goal-position verification).  The captured orientation also has slight
+drift from URDF FK at `home_joints`.  Together those exceed the
+planner's `goal_position_tolerance=0.005 m` / `goal_orientation_tolerance=0.01 rad`.
+
+Next things to try (in order):
+1. Increase `goal_position_tolerance` to 0.01 m and `goal_orientation_tolerance`
+   to 0.05 rad in `planning.yaml` — likely to fix without other changes.
+2. Read CURRENT EE pose via TF after move_to_home, compute pre_grasp =
+   `current + Z`.  Same trick as the smoke test.  Loses "absolute pen
+   position" semantics but matches what the smoke test proved works.
+3. Populate `start_state` explicitly in the GetMotionPlan request from
+   the cached `_joint_positions` instead of leaving RobotState() empty.
+   move_group's planning_scene_monitor may have a sync lag.
+4. Capture move_group's terminal output to see the actual rejection
+   reason (99999 is generic — internal logs usually have detail).
+
 ## MoveIt2
 
 - **Implement `execute_cartesian_move`** in `cello_bridge.py`

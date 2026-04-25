@@ -293,8 +293,8 @@ def test_from_yaml_files_cello():
     assert len(cfg.home_joints) == cfg.dof
     # fixed_pick_test plumbing
     assert cfg.test_lift_offset_z == pytest.approx(0.05)
-    assert cfg.pre_grasp_offset_z == pytest.approx(0.10)
-    assert cfg.retreat_offset_z == pytest.approx(0.10)
+    assert cfg.pre_grasp_offset_z == pytest.approx(0.05)
+    assert cfg.retreat_offset_z == pytest.approx(0.05)
     assert cfg.object_pose is not None
     assert cfg.object_pose.frame_id == "base_link"
     assert cfg.object_pose.position == pytest.approx((-0.289, 0.021, -0.005))
@@ -517,6 +517,56 @@ def test_execute_cartesian_move_refuses_partial_fraction():
                                        min_fraction=0.9)
     assert ok is False
     assert sent_trajectories == []   # nothing sent to the arm
+
+
+def test_fixed_pick_build_plan_offsets():
+    """build_plan() should add Z offsets correctly and require all 4 fields."""
+    import sys as _sys
+    from pathlib import Path
+    repo_root = Path(__file__).resolve().parents[3]
+    sp = str(repo_root / "scripts")
+    if sp not in _sys.path:
+        _sys.path.insert(0, sp)
+    import importlib
+    fixed_pick = importlib.import_module("fixed_pick")
+
+    cfg = RobotConfig.from_yaml_files(
+        str(repo_root / "config" / "robot.yaml"),
+        str(repo_root / "config" / "robots" / "cello_follower.yaml"),
+    )
+    plan = fixed_pick.build_plan(cfg)
+
+    # pre_grasp = object_pose + pre_grasp_offset_z
+    assert plan.grasp.position.z == pytest.approx(-0.005)
+    assert plan.pre_grasp.position.z == pytest.approx(-0.005 + 0.05)
+    assert plan.retreat.position.z == pytest.approx(-0.005 + 0.05)
+    # X / Y / orientation preserved
+    assert plan.pre_grasp.position.x == pytest.approx(plan.grasp.position.x)
+    assert plan.pre_grasp.orientation.w == pytest.approx(plan.grasp.orientation.w)
+
+    # pre_place = place_pose + pre_grasp_offset_z (same offset by design)
+    assert plan.place.position.z == pytest.approx(0.051)
+    assert plan.pre_place.position.z == pytest.approx(0.051 + 0.05)
+    assert plan.post_place.position.z == pytest.approx(0.051 + 0.05)
+
+    # grasp_force = 50 % of max_force
+    assert plan.grasp_force == pytest.approx(cfg.gripper.max_force * 0.5)
+
+
+def test_fixed_pick_build_plan_rejects_missing_object_pose():
+    """Plan construction must error out when required fields are null."""
+    import sys as _sys
+    from pathlib import Path
+    repo_root = Path(__file__).resolve().parents[3]
+    sp = str(repo_root / "scripts")
+    if sp not in _sys.path:
+        _sys.path.insert(0, sp)
+    import importlib
+    fixed_pick = importlib.import_module("fixed_pick")
+
+    cfg = RobotConfig.from_dict(CELLO_PARAMS)   # has no fixed_pick_test fields
+    with pytest.raises(SystemExit, match=r"home_joints|object_pose"):
+        fixed_pick.build_plan(cfg)
 
 
 def test_execute_cartesian_move_dispatches_full_path():
